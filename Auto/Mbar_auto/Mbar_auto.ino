@@ -18,6 +18,16 @@ const int MOTOR2PIN1 = 5;
 const int MOTOR2PIN2 = 18;
 const int ENABLEPIN2 = 19;
 
+// Min & Max Pulse Width for Servos
+const int SERVOMIN0 = 150;
+const int SERVOMAX0 = 600;
+const int SERVOMIN1 = 150;
+const int SERVOMAX1 = 600;
+const int SERVOMIN2 = 150;
+const int SERVOMAX2 = 650;
+const int SERVOMIN3 = 150;
+const int SERVOMAX3 = 555;
+
 // PWM Properties
 const int freq = 30000;
 const int pwmChannel0 = 0;
@@ -26,53 +36,47 @@ const int pwmChannel2 = 2;
 const int resolution = 8;
 int dutyCycle = 255;
 
-// Min & Max Pulse Width for Servos
-const int SERVOMIN0 150;
-const int SERVOMAX0 600;
-const int SERVOMIN1 150;
-const int SERVOMAX1 600;
-const int SERVOMIN2 150;
-const int SERVOMAX2 650;
-const int SERVOMIN3 150;
-const int SERVOMAX3 555;
-
 // Servo Driver Board I2C Setup
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40, Wire);
 
 // Lidar Variables
-float distance;
-Adafruit_VL53L0X lidar0 = Adafruit_VL53L0X(0x41);
-Adafruit_VL53L0X lidar1 = Adafruit_VL53L0X(0x42);
-Adafruit_VL53L0X lidar2 = Adafruit_VL53L0X(0x43);
+Adafruit_VL53L0X lidar0 = Adafruit_VL53L0X();
+Adafruit_VL53L0X lidar1 = Adafruit_VL53L0X();
+Adafruit_VL53L0X lidar2 = Adafruit_VL53L0X();
 VL53L0X_RangingMeasurementData_t measure;
+float distance;
 
-// General
+// General Variables
 const float distance_to_bar = 120;
 int track_sequence = 0;
+int bar_count = 0;
 
 // Boolean Flags
-bool hook0_open = false;
-bool hook1_open = true;
-bool hook2_open = false;
-bool underbar = false;
+bool shouldChangeTrack = true;
+bool baseHasArrived = false;
+bool hasOpenHook0 = false;
+bool hasOpenHook1 = true;
+bool hasOpenHook2 = false;
+bool isUnderBar = false;
 
 struct track {
     int motorpin1;
     int motorpin2;
-    bool hook_open;
+    bool hasOpenHook;
     Adafruit_VL53L0X lidar;
 };
 
-struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, hook0_open, lidar0};
-struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, hook1_open, lidar1};
-struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, hook2_open, lidar2};
+struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, hasOpenHook0, lidar0};
+struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, hasOpenHook1, lidar1};
+struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, hasOpenHook2, lidar2};
 track my_track;
 
 
 //---------------------------------------FUNCTIONS---------------------------------------//
 
 
-struct track track_info(int track_num) {
+// Switch track variables according to the active track
+struct track trackInfo(int track_num) {
     switch (track_num) {
         case 0:
             return track0;
@@ -84,7 +88,7 @@ struct track track_info(int track_num) {
 }
 
 // Function to convert degrees to pulse width
-float deg2pulse(int servo_num, float angle) {
+float degToPulse(int servo_num, float angle) {
   float pulse;
   switch (servo_num) {
     case 0:
@@ -101,7 +105,7 @@ float deg2pulse(int servo_num, float angle) {
 }
 
 // Stop all DC motors
-void stop_all() {
+void stopAll() {
   dutyCycle = 0;
   digitalWrite(MOTOR0PIN1, LOW);
   digitalWrite(MOTOR0PIN2, LOW);
@@ -111,8 +115,14 @@ void stop_all() {
   digitalWrite(MOTOR2PIN2, LOW);
 }
 
-// Move individual tracks
-void move_track(int track_num, bool goForward) {
+// Move base forward or backward
+void moveBase(int track_num, bool goForward) {
+    moveTrack(((track_num + 1) % 3), !goForward);
+    moveTrack(((track_num + 2) % 3), !goForward);
+}
+
+// Move individual tracks forward or backward
+void moveTrack(int track_num, bool goForward) {
     if (track_num == 2) {
         digitalWrite(my_track.motorpin1, !goForward);
         digitalWrite(my_track.motorpin2, goForward);
@@ -125,18 +135,12 @@ void move_track(int track_num, bool goForward) {
 // Open or close hook
 void hook(int track_num, String open_close) {
     if (open_close == "open") {
-        pwm.setPWM(track_num, 0, deg2pulse(track_num, 90));
-        my_track.hook_open = true;
+        pwm.setPWM(track_num, 0, degToPulse(track_num, 90));
+        my_track.hasOpenHook = true;
     } else if (open_close == "close") {
-        pwm.setPWM(track_num, 0, deg2pulse(track_num, 0));
-        my_track.hook_open = false;
+        pwm.setPWM(track_num, 0, degToPulse(track_num, 0));
+        my_track.hasOpenHook = false;
     }
-}
-
-// Move basement forward until the back hook detects a bar
-void move_basement(int track_num) {
-        move_track(((track_num + 1) % 3), FALSE);
-        move_track(((track_num + 2) % 3), FALSE);
 }
 
 
@@ -144,9 +148,9 @@ void setup() {
     Serial.begin(115200);
   //  Serial2.begin(9600);
   //  JY901.attach(Serial2);
-  //  lidar0.begin();
-  //  lidar1.begin();
-  //  lidar2.begin();
+  //  lidar0.begin(0x29);
+  //  lidar1.begin(0x2A);
+  //  lidar2.begin(0x2B);
     
     pinMode(MOTOR0PIN1, OUTPUT);
     pinMode(MOTOR0PIN2, OUTPUT);
@@ -171,39 +175,40 @@ void setup() {
 }
 
 void loop() {  
-    track_sequence = (track_sequence + 1) % 3;
-    my_track = track_info(track_sequence);
-
-    hook(track_sequence, "open");
-    
-    while(1) {
-        my_track.lidar.rangingTest(&measure, false);
-        distance = measure.RangeMilliMeter;
-        bool bar_detected = distance <= distance_to_bar;
-        int count = 0;
-        
-        if (base_not_home) {
-            move_basement(track_sequence);
-            if (!bar_detected) underbar = false;
-
-            if (!underbar && bar_detected) {
-                underbar = true;
-                base_not_home = !base_not_home;
-            }
-            continue;
-        }
-        
-        if (!underbar && bar_detected && count != 1) {
-            cnt += 1;
-            underbar = true;
-        } else if (!underbar && bar_detected && count == 1) {
-            underbar = true;
-            // delay(100);
-            stop_all();
-            hook(track_num, "close");
-            break;
-        } else if (underbar && !bar_detected) {
-            underbar = false;
-        } else move_track(track_sequence);
+    if (shouldChangeTrack) {
+        track_sequence = (track_sequence + 1) % 3;
+        my_track = trackInfo(track_sequence);
+        hook(track_sequence, "open");
+        shouldChangeTrack = false;
     }
+
+    my_track.lidar.rangingTest(&measure, false);
+    distance = measure.RangeMilliMeter;
+    bool hasDetectedBar = distance <= distance_to_bar;
+        
+    if (!baseHasArrived) {
+        moveBase(track_sequence, true);
+
+        if (!hasDetectedBar) isUnderBar = false;
+        if (!isUnderBar && hasDetectedBar) {
+            isUnderBar = true;
+            baseHasArrived = true;
+        }
+        return;
+    }
+    
+    if (!isUnderBar && hasDetectedBar && bar_count != 1) {
+        bar_count += 1;
+        isUnderBar = true;
+    } else if (!isUnderBar && hasDetectedBar && bar_count == 1) {
+        isUnderBar = true;
+        stopAll();
+        hook(track_sequence, "close");
+        shouldChangeTrack = true;
+        return;
+    } else if (isUnderBar && !hasDetectedBar) {
+        isUnderBar = false;
+    } else moveTrack(track_sequence, true);
+
+    delay(15);
 }
