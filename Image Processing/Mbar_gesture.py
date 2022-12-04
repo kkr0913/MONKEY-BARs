@@ -18,16 +18,10 @@ cnt = 0
 
 # Function to detect hand gestures
 def get_gesture():
-    prev_gesture = gesture
-    if prev_gesture != gesture:
-        cnt = 0
-    else:
-        cnt += 1
-
     if totalFingers == 5:
-        return "Stop"
+            return "Stop"
     elif totalFingers == 0 and thumb_joint_x < wrist_x:
-        return "Move Base Forward"
+            return "Move Base Forward"
     elif totalFingers == 0 and thumb_joint_x > wrist_x:
         return "Move Base Backward"
     elif totalFingers == 2 and fingers[0] * fingers[4] == 1:
@@ -75,7 +69,7 @@ while True:
         prev_gesture = gesture
         if cnt > 5:
             command = gesture
-        requests.post(serverPostSignal, json = command)
+        requests.post(serverPostSignal, json=command)
         cv2.putText(img, f'Fingers: {totalFingers}', (20, 120), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 3)
 
     # Display
