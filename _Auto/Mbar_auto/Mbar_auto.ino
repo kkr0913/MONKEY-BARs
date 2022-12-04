@@ -16,7 +16,12 @@ const int ENABLEPIN1 = 33;
 // Arm 2 Pins
 const int MOTOR2PIN1 = 5;
 const int MOTOR2PIN2 = 18;
-const int ENABLEPIN2 = 19;
+const int ENABLEPIN2 = 19; 
+
+// Lidar Pins
+const int LIDAR0PIN = 4;
+const int LIDAR1PIN = 0;
+const int LIDAR2PIN = 15;
 
 // Min & Max Pulse Width for Servos
 const int SERVOMIN0 = 150;
@@ -62,13 +67,14 @@ bool isUnderBar = false;
 struct track {
     int motorpin1;
     int motorpin2;
+    int pwmChannel;
     bool hasOpenHook;
     Adafruit_VL53L0X lidar;
 };
 
-struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, hasOpenHook0, lidar0};
-struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, hasOpenHook1, lidar1};
-struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, hasOpenHook2, lidar2};
+struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, pwmChannel0, hasOpenHook0, lidar0};
+struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, pwmChannel1, hasOpenHook1, lidar1};
+struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, pwmChannel2, hasOpenHook2, lidar2};
 track my_track;
 
 
@@ -104,21 +110,25 @@ float degToPulse(int servo_num, float angle) {
   return pulse;
 }
 
-// Stop all DC motors
-void stopAll() {
-  dutyCycle = 0;
-  digitalWrite(MOTOR0PIN1, LOW);
-  digitalWrite(MOTOR0PIN2, LOW);
-  digitalWrite(MOTOR1PIN1, LOW);
-  digitalWrite(MOTOR1PIN2, LOW);
-  digitalWrite(MOTOR2PIN1, LOW);
-  digitalWrite(MOTOR2PIN2, LOW);
+void something_imu() {
+    JY901.receiveSerialData();
+    float tilt_angle = JY901.getRoll();
+    // float tilt_angle = JY901.getPitch();
+    if (tilt_angle >= 30 || tilt_angle <= -30) stopAll();
 }
 
-// Move base forward or backward
-void moveBase(int track_num, bool goForward) {
-    moveTrack(((track_num + 1) % 3), !goForward);
-    moveTrack(((track_num + 2) % 3), !goForward);
+// Stop all DC motors
+void stopAll() {
+    dutyCycle = 0;
+    digitalWrite(MOTOR0PIN1, LOW);
+    digitalWrite(MOTOR0PIN2, LOW);
+    digitalWrite(MOTOR1PIN1, LOW);
+    digitalWrite(MOTOR1PIN2, LOW);
+    digitalWrite(MOTOR2PIN1, LOW);
+    digitalWrite(MOTOR2PIN2, LOW);
+    ledcWrite(pwmChannel0, dutyCycle);
+    ledcWrite(pwmChannel1, dutyCycle);
+    ledcWrite(pwmChannel2, dutyCycle);
 }
 
 // Move individual tracks forward or backward
@@ -130,6 +140,13 @@ void moveTrack(int track_num, bool goForward) {
         digitalWrite(my_track.motorpin1, goForward);
         digitalWrite(my_track.motorpin2, !goForward);
     }
+    ledcWrite(my_track.pwmChannel, dutyCycle);
+}
+
+// Move base forward or backward
+void moveBase(int track_num, bool goForward) {
+    moveTrack(((track_num + 1) % 3), !goForward);
+    moveTrack(((track_num + 2) % 3), !goForward);
 }
 
 // Open or close hook
@@ -143,15 +160,13 @@ void hook(int track_num, String open_close) {
     }
 }
 
+//------------------------------------------SETUP & LOOP-------------------------------------------//
 
 void setup() {
     Serial.begin(115200);
   //  Serial2.begin(9600);
   //  JY901.attach(Serial2);
-  //  lidar0.begin(0x29);
-  //  lidar1.begin(0x2A);
-  //  lidar2.begin(0x2B);
-    
+
     pinMode(MOTOR0PIN1, OUTPUT);
     pinMode(MOTOR0PIN2, OUTPUT);
     pinMode(ENABLEPIN0, OUTPUT);
@@ -161,6 +176,20 @@ void setup() {
     pinMode(MOTOR2PIN1, OUTPUT);
     pinMode(MOTOR2PIN2, OUTPUT);
     pinMode(ENABLEPIN2, OUTPUT);
+    pinMode(LIDAR0PIN, OUTPUT);
+    pinMode(LIDAR1PIN, OUTPUT);
+    pinMode(LIDAR2PIN, OUTPUT);
+
+    digitalWrite(LIDAR0PIN, LOW);
+    digitalWrite(LIDAR1PIN, LOW);
+    digitalWrite(LIDAR2PIN, LOW);
+
+    digitalWrite(LIDAR0PIN, HIGH);
+    lidar0.begin(0x2A);
+    digitalWrite(LIDAR1PIN, HIGH);
+    lidar1.begin(0x2B);
+    digitalWrite(LIDAR2PIN, HIGH);
+    lidar2.begin(0x2C);
     
     ledcSetup(pwmChannel0, freq, resolution);
     ledcSetup(pwmChannel1, freq, resolution);
@@ -168,13 +197,10 @@ void setup() {
     ledcAttachPin(ENABLEPIN0, pwmChannel0);
     ledcAttachPin(ENABLEPIN1, pwmChannel1);
     ledcAttachPin(ENABLEPIN2, pwmChannel2);
-
-  //  ledcWrite(pwmChannel0, dutyCycle);
-  //  ledcWrite(pwmChannel1, dutyCycle);
-  //  ledcWrite(pwmChannel2, dutyCycle);
 }
 
-void loop() {  
+void loop() { 
+    // defining the track sequence and opening the hook
     if (shouldChangeTrack) {
         track_sequence = (track_sequence + 1) % 3;
         my_track = trackInfo(track_sequence);
@@ -182,33 +208,38 @@ void loop() {
         shouldChangeTrack = false;
     }
 
+    // constantly check whether the current track is detecting a bar
     my_track.lidar.rangingTest(&measure, false);
     distance = measure.RangeMilliMeter;
-    bool hasDetectedBar = distance <= distance_to_bar;
+    bool hasDetectedBar = (distance <= distance_to_bar);
         
+    // move the base until current track detects next bar
     if (!baseHasArrived) {
         moveBase(track_sequence, true);
 
-        if (!hasDetectedBar) isUnderBar = false;
-        if (!isUnderBar && hasDetectedBar) {
+        if (!hasDetectedBar) isUnderBar = false;                        // has not detected the bar
+        if (!isUnderBar && hasDetectedBar) {                            // under the bar & detected the bar
             isUnderBar = true;
             baseHasArrived = true;
         }
-        return;
+        return;                                                         // looping, not under the bar or no bar detected
     }
-    
-    if (!isUnderBar && hasDetectedBar && bar_count != 1) {
+
+    // move current track until it reaches second bar from initial position
+    if (!isUnderBar && hasDetectedBar && bar_count != 1) {              // detects the bar, but not correct one
         bar_count += 1;
         isUnderBar = true;
-    } else if (!isUnderBar && hasDetectedBar && bar_count == 1) {
+    } else if (!isUnderBar && hasDetectedBar && bar_count == 1) {       // detects correct bar, close hook, & change track (RESET)
         isUnderBar = true;
         stopAll();
         hook(track_sequence, "close");
         shouldChangeTrack = true;
+        baseHasArrived = false;
+        bar_count = 0;
         return;
-    } else if (isUnderBar && !hasDetectedBar) {
+    } else if (isUnderBar && !hasDetectedBar) {                         // detects same bar as last iteration, ignore reading
         isUnderBar = false;
-    } else moveTrack(track_sequence, true);
+    } else moveTrack(track_sequence, true);                             // move current track
 
     delay(15);
 }
