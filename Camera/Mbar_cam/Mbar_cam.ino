@@ -2,7 +2,7 @@
 #include <WiFi.h>
 #include "camera_pins.h"
 
-const char* ssid     = "ESP32-CAM_AP";
+const char* ssid     = "Mbar_AP";
 const char* password = "123456789";
 
 void startCameraServer();
