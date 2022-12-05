@@ -1,9 +1,14 @@
 #include "esp_camera.h"
 #include <WiFi.h>
+#include "ESPAsyncWebServer.h"
+#include "AsyncTCP.h"
+#define CAMERA_MODEL_AI_THINKER
 #include "camera_pins.h"
 
-const char* ssid     = "Mbar_AP";
-const char* password = "123456789";
+const char* ssid     = "smsphone";
+const char* password = "helloworld";
+
+String val = "Stop";
 
 void startCameraServer();
 AsyncWebServer server(83);
@@ -80,28 +85,35 @@ void setup() {
         s->set_framesize(s, FRAMESIZE_SVGA);
     }
 
-    // Set Access Point with SSID and password
-    Serial.print("Setting Access Point…");
-    WiFi.softAP(ssid, password);
+    // initialize the wifi and connect to phone hotspot
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    WiFi.setSleep(false);
 
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("Connect to the ESP32 AP and go to: http://");
-    Serial.println(IP);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("WiFi connected");
 
-    // Start streaming web server
     startCameraServer();
 
-    // Player ID server route
-    server.on("/getSignal",HTTP_GET,[](AsyncWebServerRequest * request) {
-        Serial.println(signal);
-        request->send(200, "text/plain", signal);
+    Serial.print("Camera Ready! Use 'http://");
+    Serial.print(WiFi.localIP());
+    Serial.println("' to connect");
+
+    // Server route
+    server.on("/getSignal", HTTP_GET, [](AsyncWebServerRequest * request){
+      request->send(200, "text/plain", val);
     });
-    server.on("/postSignal",HTTP_POST,[](AsyncWebServerRequest * request) {},
-    NULL,[](AsyncWebServerRequest * request, uint8_t *data_in, size_t len, size_t index, size_t total) {
-        signal = String((char *)data_in, len);
-        request->send(200, "text/plain", signal);
+    server.on("/postSignal", HTTP_POST, [](AsyncWebServerRequest * request){},
+    NULL, [](AsyncWebServerRequest * request, uint8_t *data_in, size_t len, size_t index, size_t total) {
+      val = String((char *)data_in, len);
+      request->send(200, "text/plain", val);
     });
-    }
+    server.begin();
+}
 
 void loop() {
 }
