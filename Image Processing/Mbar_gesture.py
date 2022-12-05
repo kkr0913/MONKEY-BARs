@@ -3,11 +3,14 @@ import cv2
 import math
 import requests
 
-# Get video from ESP32-CAM Access Point
-URL = "http://192.168.4.1"
-cap = cv2.VideoCapture(URL + ":81/stream")
+# Get video from ESP32-CAM web stream
+cap = cv2.VideoCapture(1)
+URL = "http://172.20.10.11"
+# cap = cv2.VideoCapture(URL + ":81/stream")
 serverPostSignal = URL + ":83/postSignal"
 detector = HandDetector(detectionCon=0.5, maxHands=1)
+cap.set(3, 1280)
+cap.set(4, 720)
 
 # General variables
 gesture = "Stop"
@@ -69,7 +72,7 @@ while True:
         prev_gesture = gesture
         if cnt > 5:
             command = gesture
-        requests.post(serverPostSignal, json=command)
+        requests.post(serverPostSignal, data=command)
         cv2.putText(img, f'Fingers: {totalFingers}', (20, 120), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 3)
 
     # Display
