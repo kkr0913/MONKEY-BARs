@@ -1,17 +1,17 @@
-#include <JY901.h>
-#include "Adafruit_VL53L0X.h"
 #include <WiFi.h>
-#include "ESPAsyncWebServer.h"
-#include "AsyncTCP.h"
-#include <HTTPClient.h>
 #include <Wire.h>
+#include <JY901.h>
+#include <HTTPClient.h>
+#include "AsyncTCP.h"
+#include "Adafruit_VL53L0X.h"
+#include "ESPAsyncWebServer.h"
 #include <Adafruit_PWMServoDriver.h>
 
-// Hotspot for ESP32 to connect to: Wifi SSID and Password
+// WiFi credentials for ESP32 to connect
 const char* ssid = "smsphone";
 const char* password = "helloworld";
 
-// Server routes used by ESP32 microcontroller
+// Server routes used by ESP32
 HTTPClient http;
 const char* URL = "http://172.20.10.11";
 const char* serverGetSignal = "http://172.20.10.11:83/getSignal";
@@ -41,7 +41,7 @@ const int SERVOMAX2 = 650;
 const int SERVOMIN3 = 150;
 const int SERVOMAX3 = 555;
 
-// Setting PWM properties
+// PWM Properties
 const int freq = 30000;
 const int pwmChannel0 = 0;
 const int pwmChannel1 = 1;
@@ -56,24 +56,17 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40, Wire);
 int track_sequence = 0;
 
 // Boolean Flags
-bool shouldChangeTrack = true;
-bool baseHasArrived = false;
-bool hasOpenHook0 = false;
-bool hasOpenHook1 = true;
-bool hasOpenHook2 = false;
-bool isUnderBar = false;
 bool trackChanged = false;
 
 struct track {
     int motorpin1;
     int motorpin2;
     int pwmChannel;
-    bool hasOpenHook;
 };
 
-struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, pwmChannel0, hasOpenHook0};
-struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, pwmChannel1, hasOpenHook1};
-struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, pwmChannel2, hasOpenHook2};
+struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, pwmChannel0};
+struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, pwmChannel1};
+struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, pwmChannel2};
 track my_track;
 
 
@@ -92,7 +85,7 @@ struct track trackInfo(int track_num) {
     }
 }
 
-// Get from the server route
+// Get data from the server route
 String httpGETRequest(const char* serverName) {
     http.begin(serverName);
 
@@ -113,7 +106,7 @@ String httpGETRequest(const char* serverName) {
     return payload;
 }
 
-// Post to the server route
+// Post data to the server route
 void httpPOSTRequest(const char* serverName, String postString) {
     http.begin(serverName);
     http.POST(postString);
@@ -122,91 +115,45 @@ void httpPOSTRequest(const char* serverName, String postString) {
 
 // Function to convert degrees to pulse width
 float degToPulse(int servo_num, float angle) {
-  float pulse;
-  switch (servo_num) {
-    case 0:
-      pulse = map(angle, 0, 180, SERVOMIN0, SERVOMAX0);
-      break;
-    case 1:
-      pulse = map(angle, 0, 180, SERVOMIN1, SERVOMAX1);
-      break;
-    case 2:
-      pulse = map(angle, 0, 180, SERVOMIN2, SERVOMAX2);
-      break;
-  }
-  return pulse;
+    float pulse;
+    switch (servo_num) {
+        case 0:
+            pulse = map(angle, 0, 180, SERVOMIN0, SERVOMAX0);
+            break;
+        case 1:
+            pulse = map(angle, 0, 180, SERVOMIN1, SERVOMAX1);
+            break;
+        case 2:
+            pulse = map(angle, 0, 180, SERVOMIN2, SERVOMAX2);
+            break;
+    }
+    return pulse;
 }
 
-void teleop_switching(String signalCase) {
-    if (signalCase == "Move Track Forward") {
-      moveTrack(track_sequence, true);
-      Serial.println("Move Track Forward");
-    }
-    else if (signalCase == "Move Track Backward") {
-      moveTrack(track_sequence, false);
-      Serial.println("Move Track Backward");
-    }
-    else if (signalCase == "Move Base Forward") {
-      moveBase(track_sequence, true);
-      Serial.println("Move Base Forward");
-    }
-    else if (signalCase == "Move Base Backward") {
-      moveBase(track_sequence, false);
-      Serial.println("Move Base Backward");
-    }
-    else if (signalCase == "Open Hook") {
-      hook(track_sequence, "open");
-      Serial.println("Open Hook");
-    }
-    else if (signalCase == "Close Hook") {
-      hook(track_sequence, "close");
-      Serial.println("Close Hook");
-    }
-    else if (signalCase == "Increase Sequence") {
-      changeTrack("increment");
-      Serial.println("Increase Sequence");
-    }
-    else if (signalCase == "Decrease Sequence") {
-      changeTrack("decrement");
-      Serial.println("Decrease Sequence");
-    }
-    else {
-      stopAll();
-      Serial.println("Stop");
-    }
-}
+// Control all actions according to the received data
+void actionControl(String command) {
+    Serial.println(command);
+    if (command != "Increase Sequence" && command != "Decrease Sequence") trackChanged = false;
 
-// void teleop_switching(char signalCase) {
-//     swtich(signalCase) {        
-//         case 'Stop':                                            // Stop all motors              palm open
-//             stopAll();
-//             break;
-//         case 'Move Track Forward':                              // Track forward                yolo front
-//             moveTrack(track_sequence, true);
-//             break;
-//         case 'Move Track Backward':                             // Track backward               yolo back
-//             moveTrack(track_sequence, false);
-//             break;
-//         case 'Move Base Forward':                               // Basement forward             fist front
-//             moveBase(track_sequence, true);
-//             break;
-//         case 'Move Base Backward':                              // Basement backward            fist back
-//             moveBase(track_sequence, false);
-//             break;
-//         case 'Open Hook':                                       // Open hook                    open peace sign
-//             hook(track_sequence, "open");
-//             break;
-//         case 'Close Hook':                                      // Close hook                   closed peace sign
-//             hook(track_sequence, "close");
-//             break;
-//         case 'Increase Sequence':                               // Change track sequence        thumbs up
-//             changeTrack("increment");
-//             break;
-//         case 'Decrease Sequence':                               // Change track sequence        thumbs down
-//             changeTrack("decrement");
-//             break;
-//     }
-// }
+    // Move track forward (yolo front)
+    if (command == "Move Track Forward")         moveTrack(track_sequence, true);
+    // Move track backward (yolo back)
+    else if (command == "Move Track Backward")   moveTrack(track_sequence, false);
+    // Move base forward (fist front)
+    else if (command == "Move Base Forward")     moveBase(track_sequence, true);
+    // Move base backward (fist back)
+    else if (command == "Move Base Backward")    moveBase(track_sequence, false);
+    // Open hook (open peace)
+    else if (command == "Open Hook")             hook(track_sequence, "open");
+    // Close hook (closed peace)
+    else if (command == "Close Hook")            hook(track_sequence, "close");
+    // Change track sequence (thumbs up)
+    else if (command == "Increase Sequence")     changeTrack("increment");
+    // Change track sequence (thumbs down)
+    else if (command == "Decrease Sequence")     changeTrack("decrement");
+    // Stop all motors (palm open)
+    else                                         stopAll();
+}
 
 // Change track sequence
 void changeTrack(String updown) {
@@ -286,12 +233,11 @@ void setup() {
     ledcAttachPin(ENABLEPIN1, pwmChannel1);
     ledcAttachPin(ENABLEPIN2, pwmChannel2);
 
-    // Initialize the WiFi to connect to phone hotspot
+    // Initialize and connect to WiFi
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
     WiFi.setSleep(false);
-
-    Serial.print("Connecting to hotspot");
+    Serial.print("Connecting to WiFi");
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
@@ -301,45 +247,11 @@ void setup() {
 }
 
 void loop() {
-    String command = httpGETRequest(serverGetSignal);
-    teleop_switching(command);
+    String rxdata = httpGETRequest(serverGetSignal);
+    actionControl(rxdata);
     
-//    digitalWrite(MOTOR0PIN1, LOW);
-//    digitalWrite(MOTOR0PIN2, HIGH); 
-//    ledcWrite(pwmChannel0, dutyCycle); 
-//    delay(500);
-//    digitalWrite(MOTOR0PIN1, HIGH);
-//    digitalWrite(MOTOR0PIN2, LOW); 
-//    ledcWrite(pwmChannel1, dutyCycle); 
-//    delay(500);
-//
-//    stopAll();
-//    
-//    digitalWrite(MOTOR1PIN1, LOW);
-//    digitalWrite(MOTOR1PIN2, HIGH); 
-//    ledcWrite(pwmChannel1, dutyCycle); 
-//    delay(500);
-//    digitalWrite(MOTOR1PIN1, HIGH);
-//    digitalWrite(MOTOR1PIN2, LOW); 
-//    ledcWrite(pwmChannel1, dutyCycle); 
-//    delay(500);
-//
-//    stopAll();
-//
-//    digitalWrite(MOTOR2PIN1, LOW);
-//    digitalWrite(MOTOR2PIN2, HIGH); 
-//    ledcWrite(pwmChannel2, dutyCycle); 
-//    delay(500);
-//    digitalWrite(MOTOR2PIN1, HIGH);
-//    digitalWrite(MOTOR2PIN2, LOW); 
-//    ledcWrite(pwmChannel2, dutyCycle); 
-//    delay(500);
-//
-//    stopAll();
-    
-    ledcWrite(pwmChannel0, dutyCycle);
-    ledcWrite(pwmChannel1, dutyCycle);
-    ledcWrite(pwmChannel2, dutyCycle);
+    // ledcWrite(pwmChannel0, dutyCycle);
+    // ledcWrite(pwmChannel1, dutyCycle);
+    // ledcWrite(pwmChannel2, dutyCycle);
     delay(15);
-    Serial.println("\n");
 }
