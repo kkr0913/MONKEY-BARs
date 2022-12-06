@@ -5,8 +5,8 @@
 #define CAMERA_MODEL_AI_THINKER
 #include "camera_pins.h"
 
-const char* ssid     = "smsphone";
-const char* password = "helloworld";
+const char* ssid     = "Tufts_Robot";
+const char* password = "";
 
 String val = "Stop";
 
@@ -87,7 +87,7 @@ void setup() {
 
     // initialize the wifi and connect to phone hotspot
     WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
+    WiFi.begin(ssid);
     WiFi.setSleep(false);
 
     while (WiFi.status() != WL_CONNECTED) {
