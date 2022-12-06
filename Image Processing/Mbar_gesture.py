@@ -5,7 +5,7 @@ import requests
 
 # Get video from ESP32-CAM web stream
 cap = cv2.VideoCapture(1)
-URL = "http://172.20.10.11"
+URL = "http://10.247.137.35"
 # cap = cv2.VideoCapture(URL + ":81/stream")
 serverPostSignal = URL + ":83/postSignal"
 detector = HandDetector(detectionCon=0.5, maxHands=1)

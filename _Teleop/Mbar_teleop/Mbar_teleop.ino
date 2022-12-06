@@ -3,18 +3,28 @@
 #include <JY901.h>
 #include <HTTPClient.h>
 #include "AsyncTCP.h"
-#include "Adafruit_VL53L0X.h"
 #include "ESPAsyncWebServer.h"
+#include "Adafruit_VL53L0X.h"
 #include <Adafruit_PWMServoDriver.h>
 
-// WiFi credentials for ESP32 to connect
-const char* ssid = "smsphone";
+/*
+// WiFi Credentials for ESP32 to Connect
+const char* ssid     = "smsphone";
 const char* password = "helloworld";
 
-// Server routes used by ESP32
+// Server Routes Used by ESP32
 HTTPClient http;
 const char* URL = "http://172.20.10.11";
 const char* serverGetSignal = "http://172.20.10.11:83/getSignal";
+*/
+
+// WiFi Credentials for ESP32 to Connect
+const char* ssid     = "Tufts_Robot";
+const char* password = "";
+
+// Server Routes Used by ESP32
+HTTPClient http;
+const char* serverGetSignal = "http://10.247.137.35:83/getSignal";
 
 // Arm 0 Pins
 const int MOTOR0PIN1 = 12;
@@ -32,14 +42,12 @@ const int MOTOR2PIN2 = 18;
 const int ENABLEPIN2 = 19;
 
 // Min & Max Pulse Width for Servos
-const int SERVOMIN0 = 150;
+const int SERVOMIN0 = 180;
 const int SERVOMAX0 = 600;
-const int SERVOMIN1 = 150;
+const int SERVOMIN1 = 180;
 const int SERVOMAX1 = 600;
-const int SERVOMIN2 = 150;
+const int SERVOMIN2 = 180;
 const int SERVOMAX2 = 650;
-const int SERVOMIN3 = 150;
-const int SERVOMAX3 = 555;
 
 // PWM Properties
 const int freq = 30000;
@@ -54,6 +62,7 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40, Wire);
 
 // General Variables
 int track_sequence = 0;
+int hook_angles[] = {90, 0, 90};
 
 // Boolean Flags
 bool trackChanged = false;
@@ -67,7 +76,6 @@ struct track {
 struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, pwmChannel0};
 struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, pwmChannel1};
 struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, pwmChannel2};
-track my_track;
 
 
 //-----------------------------------FUNCTIONS-----------------------------------//
@@ -144,25 +152,15 @@ void actionControl(String command) {
     // Move base backward (fist back)
     else if (command == "Move Base Backward")    moveBase(track_sequence, false);
     // Open hook (open peace)
-    else if (command == "Open Hook")             hook(track_sequence, "open");
+    else if (command == "Open Hook")             moveHook(track_sequence, "open");
     // Close hook (closed peace)
-    else if (command == "Close Hook")            hook(track_sequence, "close");
+    else if (command == "Close Hook")            moveHook(track_sequence, "close");
     // Change track sequence (thumbs up)
     else if (command == "Increase Sequence")     changeTrack("increment");
     // Change track sequence (thumbs down)
     else if (command == "Decrease Sequence")     changeTrack("decrement");
     // Stop all motors (palm open)
     else                                         stopAll();
-}
-
-// Change track sequence
-void changeTrack(String updown) {
-    if (!trackChanged) {
-        if (updown == "increment") track_sequence = (track_sequence + 1) % 3;
-        else if (updown == "decrement") track_sequence = (track_sequence + 2) % 3;
-        my_track = trackInfo(track_sequence);
-        trackChanged = true;
-    }
 }
 
 // Stop all DC motors
@@ -177,30 +175,50 @@ void stopAll() {
 
 // Move individual tracks forward or backward
 void moveTrack(int track_num, bool goForward) {
-    if (track_num == 2) {
-        digitalWrite(my_track.motorpin1, goForward);
-        digitalWrite(my_track.motorpin2, !goForward);
-    } else {
-        digitalWrite(my_track.motorpin1, !goForward);
-        digitalWrite(my_track.motorpin2, goForward);
-    }
-    ledcWrite(my_track.pwmChannel, dutyCycle);
+    track current_track = trackInfo(track_num);
+    stopAll();
+    digitalWrite(current_track.motorpin1, !goForward);
+    digitalWrite(current_track.motorpin2, goForward);
+    ledcWrite(current_track.pwmChannel, dutyCycle);
 }
 
 // Move base forward or backward
 void moveBase(int track_num, bool goForward) {
-    moveTrack(((track_num + 1) % 3), !goForward);
-    moveTrack(((track_num + 2) % 3), !goForward);
+    track other_track1 = trackInfo((track_num + 1) % 3);
+    track other_track2 = trackInfo((track_num + 2) % 3);
+
+    // change the speed of the motors to zero
+    ledcWrite(other_track1.pwmChannel, 0);
+    ledcWrite(other_track2.pwmChannel, 0);
+
+    // set the pins to the desired motor directions
+    digitalWrite(other_track1.motorpin1, !goForward);
+    digitalWrite(other_track1.motorpin2, goForward);
+    digitalWrite(other_track2.motorpin1, !goForward);
+    digitalWrite(other_track2.motorpin2, goForward);
+
+    // start the motors motions to make them move simultaneously
+    ledcWrite(other_track1.pwmChannel, dutyCycle);
+    ledcWrite(other_track2.pwmChannel, dutyCycle);
 }
 
 // Open or close hook
-void hook(int track_num, String open_close) {
-    if (open_close == "open") {
-        pwm.setPWM(track_num, 0, degToPulse(track_num, 90));
-        my_track.hasOpenHook = true;
-    } else if (open_close == "close") {
-        pwm.setPWM(track_num, 0, degToPulse(track_num, 0));
-        my_track.hasOpenHook = false;
+void moveHook(int track_num, String open_close) {
+    if (open_close == "open" && hook_angles[track_num] > 0) {
+        hook_angles[track_num] -= 3;
+        pwm.setPWM(track_num, 0, degToPulse(track_num, hook_angles[track_num]));
+    } else if (open_close == "close" && hook_angles[track_num] < 90) {
+        hook_angles[track_num] += 3;
+        pwm.setPWM(track_num, 0, degToPulse(track_num, hook_angles[track_num]));
+    }
+}
+
+// Change track sequence
+void changeTrack(String updown) {
+    if (!trackChanged) {
+        if (updown == "increment")       track_sequence = (track_sequence + 1) % 3;
+        else if (updown == "decrement")  track_sequence = (track_sequence + 2) % 3;
+        trackChanged = true;
     }
 }
 
@@ -213,8 +231,10 @@ void setup() {
     // Serial2.begin(9600);
     // JY901.attach(Serial2);
     // lidar.begin();
-
-    my_track = trackInfo(track_sequence);
+    pwm.begin();
+    pwm.setOscillatorFrequency(27000000);
+    pwm.setPWMFreq(60);
+    yield();
     
     pinMode(MOTOR0PIN1, OUTPUT);
     pinMode(MOTOR0PIN2, OUTPUT);
@@ -235,7 +255,8 @@ void setup() {
 
     // Initialize and connect to WiFi
     WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
+    // WiFi.begin(ssid, password);              // hotspot
+    WiFi.begin(ssid);                           // tufts_robot
     WiFi.setSleep(false);
     Serial.print("Connecting to WiFi");
     while (WiFi.status() != WL_CONNECTED) {
@@ -249,9 +270,5 @@ void setup() {
 void loop() {
     String rxdata = httpGETRequest(serverGetSignal);
     actionControl(rxdata);
-    
-    // ledcWrite(pwmChannel0, dutyCycle);
-    // ledcWrite(pwmChannel1, dutyCycle);
-    // ledcWrite(pwmChannel2, dutyCycle);
     delay(15);
 }
