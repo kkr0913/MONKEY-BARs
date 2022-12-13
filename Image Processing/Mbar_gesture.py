@@ -4,9 +4,8 @@ import math
 import requests
 
 # Get video from ESP32-CAM web stream
-cap = cv2.VideoCapture(1)
 URL = "http://10.247.137.35"
-# cap = cv2.VideoCapture(URL + ":81/stream")
+cap = cv2.VideoCapture(URL + ":81/stream")
 serverPostSignal = URL + ":83/postSignal"
 detector = HandDetector(detectionCon=0.5, maxHands=1)
 cap.set(3, 1280)

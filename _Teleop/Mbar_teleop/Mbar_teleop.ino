@@ -7,17 +7,6 @@
 #include "Adafruit_VL53L0X.h"
 #include <Adafruit_PWMServoDriver.h>
 
-/*
-// WiFi Credentials for ESP32 to Connect
-const char* ssid     = "smsphone";
-const char* password = "helloworld";
-
-// Server Routes Used by ESP32
-HTTPClient http;
-const char* URL = "http://172.20.10.11";
-const char* serverGetSignal = "http://172.20.10.11:83/getSignal";
-*/
-
 // WiFi Credentials for ESP32 to Connect
 const char* ssid     = "Tufts_Robot";
 const char* password = "";
@@ -42,12 +31,12 @@ const int MOTOR2PIN2 = 18;
 const int ENABLEPIN2 = 19;
 
 // Min & Max Pulse Width for Servos
-const int SERVOMIN0 = 180;
-const int SERVOMAX0 = 600;
-const int SERVOMIN1 = 180;
-const int SERVOMAX1 = 600;
-const int SERVOMIN2 = 180;
-const int SERVOMAX2 = 650;
+const int SERVOMIN0 = 120;
+const int SERVOMAX0 = 625;
+const int SERVOMIN1 = 115;
+const int SERVOMAX1 = 615;
+const int SERVOMIN2 = 120;
+const int SERVOMAX2 = 635;
 
 // PWM Properties
 const int freq = 30000;
@@ -62,7 +51,7 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40, Wire);
 
 // General Variables
 int track_sequence = 0;
-int hook_angles[] = {90, 0, 90};
+int hook_angles[] = {SERVOMAX0, SERVOMIN1, SERVOMAX2};
 
 // Boolean Flags
 bool trackChanged = false;
@@ -71,11 +60,13 @@ struct track {
     int motorpin1;
     int motorpin2;
     int pwmChannel;
+    int servomin;
+    int servomax;
 };
 
-struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, pwmChannel0};
-struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, pwmChannel1};
-struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, pwmChannel2};
+struct track track0 = {MOTOR0PIN1, MOTOR0PIN2, pwmChannel0, SERVOMIN0, SERVOMAX0};
+struct track track1 = {MOTOR1PIN1, MOTOR1PIN2, pwmChannel1, SERVOMIN1, SERVOMAX1};
+struct track track2 = {MOTOR2PIN1, MOTOR2PIN2, pwmChannel2, SERVOMIN2, SERVOMAX2};
 
 
 //-----------------------------------FUNCTIONS-----------------------------------//
@@ -101,7 +92,6 @@ String httpGETRequest(const char* serverName) {
     int httpResponseCode = http.GET();
 
     String payload = "--";
-
     if (httpResponseCode>0) {
         payload = http.getString();
     } else {
@@ -119,23 +109,6 @@ void httpPOSTRequest(const char* serverName, String postString) {
     http.begin(serverName);
     http.POST(postString);
     http.end();
-}
-
-// Function to convert degrees to pulse width
-float degToPulse(int servo_num, float angle) {
-    float pulse;
-    switch (servo_num) {
-        case 0:
-            pulse = map(angle, 0, 180, SERVOMIN0, SERVOMAX0);
-            break;
-        case 1:
-            pulse = map(angle, 0, 180, SERVOMIN1, SERVOMAX1);
-            break;
-        case 2:
-            pulse = map(angle, 0, 180, SERVOMIN2, SERVOMAX2);
-            break;
-    }
-    return pulse;
 }
 
 // Control all actions according to the received data
@@ -192,24 +165,25 @@ void moveBase(int track_num, bool goForward) {
     ledcWrite(other_track2.pwmChannel, 0);
 
     // set the pins to the desired motor directions
-    digitalWrite(other_track1.motorpin1, !goForward);
-    digitalWrite(other_track1.motorpin2, goForward);
-    digitalWrite(other_track2.motorpin1, !goForward);
-    digitalWrite(other_track2.motorpin2, goForward);
+    digitalWrite(other_track1.motorpin1, goForward);
+    digitalWrite(other_track1.motorpin2, !goForward);
+    digitalWrite(other_track2.motorpin1, goForward);
+    digitalWrite(other_track2.motorpin2, !goForward);
 
     // start the motors motions to make them move simultaneously
     ledcWrite(other_track1.pwmChannel, dutyCycle);
     ledcWrite(other_track2.pwmChannel, dutyCycle);
 }
 
-// Open or close hook
+// Open or close hook (open = servomin, close = servomax)
 void moveHook(int track_num, String open_close) {
-    if (open_close == "open" && hook_angles[track_num] > 0) {
-        hook_angles[track_num] -= 3;
-        pwm.setPWM(track_num, 0, degToPulse(track_num, hook_angles[track_num]));
-    } else if (open_close == "close" && hook_angles[track_num] < 90) {
-        hook_angles[track_num] += 3;
-        pwm.setPWM(track_num, 0, degToPulse(track_num, hook_angles[track_num]));
+    track current_track = trackInfo(track_num);
+    if (open_close == "open" && hook_angles[track_num] >= current_track.servomin) {
+        hook_angles[track_num] -= 5;
+        pwm.setPWM(track_num, 0, hook_angles[track_num]);
+    } else if (open_close == "close" && hook_angles[track_num] <= current_track.servomax) {
+        hook_angles[track_num] += 5;
+        pwm.setPWM(track_num, 0, hook_angles[track_num]);
     }
 }
 
@@ -228,9 +202,6 @@ void changeTrack(String updown) {
 
 void setup() {
     Serial.begin(115200);
-    // Serial2.begin(9600);
-    // JY901.attach(Serial2);
-    // lidar.begin();
     pwm.begin();
     pwm.setOscillatorFrequency(27000000);
     pwm.setPWMFreq(60);
@@ -255,8 +226,7 @@ void setup() {
 
     // Initialize and connect to WiFi
     WiFi.mode(WIFI_STA);
-    // WiFi.begin(ssid, password);              // hotspot
-    WiFi.begin(ssid);                           // tufts_robot
+    WiFi.begin(ssid);
     WiFi.setSleep(false);
     Serial.print("Connecting to WiFi");
     while (WiFi.status() != WL_CONNECTED) {
