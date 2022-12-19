@@ -23,6 +23,13 @@ const int LIDAR0PIN = 4;
 const int LIDAR1PIN = 0;
 const int LIDAR2PIN = 15;
 
+// LED Pins
+const int LEDPIN0 = 13;
+const int LEDPIN1 = 32;
+const int LEDPIN2 = 23;
+const int LEDPIN3 = 17;
+const int LEDPIN4 = 2;
+
 // Min & Max Pulse Width for Servos
 const int SERVOMIN0 = 120;
 const int SERVOMAX0 = 610;
@@ -54,9 +61,9 @@ const float dist_to_bar = 200;
 const int SERVOMID0 = SERVOMIN0 + (SERVOMAX0 - SERVOMIN0) / 2;
 const int SERVOMID1 = SERVOMIN1 + (SERVOMAX1 - SERVOMIN0) / 2;
 const int SERVOMID2 = SERVOMIN2 + (SERVOMAX2 - SERVOMIN0) / 2;
+int hook_angles[] = {SERVOMID0, SERVOMIN1, SERVOMID2};
 int track_sequence = 0;
 int bar_count = 0;
-int hook_angles[] = {SERVOMID0, SERVOMIN1, SERVOMID2};
 
 // Boolean Flags
 bool shouldChangeTrack = true;  // flag to change track sequence
@@ -95,6 +102,20 @@ struct track trackInfo(int track_num) {
         case 2:
             return track2;
     }
+}
+
+// Function to control the LEDs
+void ledControl() {
+    int led0 = (random(0, 101) <= 55) ? 1 : 0;
+    int led1 = (random(0, 101) <= 60) ? 1 : 0;
+    int led2 = (random(0, 101) <= 65) ? 1 : 0;
+    int led3 = (random(0, 101) <= 70) ? 1 : 0;
+    int led4 = (random(0, 101) <= 75) ? 1 : 0;
+    digitalWrite(LEDPIN0, led0);
+    digitalWrite(LEDPIN1, led1);
+    digitalWrite(LEDPIN2, led2);
+    digitalWrite(LEDPIN3, led3);
+    digitalWrite(LEDPIN4, led4);
 }
 
 // Detect the tilt with IMU
@@ -151,20 +172,16 @@ void moveHook(int track_num, String open_close) {
     track current_track = trackInfo(track_num);
     if (open_close == "open") {
         while (hook_angles[track_num] >= current_track.servomin) {
-            Serial.println("opening..........");
             hook_angles[track_num] -= 1;
             pwm.setPWM(track_num, 0, hook_angles[track_num]);
             delay(5);
         }
-        Serial.println("opened!!!!!!!!!!!!!!!");
     } else if (open_close == "close") {
         while (hook_angles[track_num] <= current_track.servomid) {
-            Serial.println("closing..........");
             hook_angles[track_num] += 1;
             pwm.setPWM(track_num, 0, hook_angles[track_num]);
             delay(5);
         }
-        Serial.println("closed!!!!!!!!!!!!!!!");
     }
 }
 
@@ -191,7 +208,17 @@ void setup() {
     pinMode(LIDAR0PIN, OUTPUT);
     pinMode(LIDAR1PIN, OUTPUT);
     pinMode(LIDAR2PIN, OUTPUT);
+    pinMode(LEDPIN0, OUTPUT);
+    pinMode(LEDPIN1, OUTPUT);
+    pinMode(LEDPIN2, OUTPUT);
+    pinMode(LEDPIN3, OUTPUT);
+    pinMode(LEDPIN4, OUTPUT);
 
+    digitalWrite(LEDPIN0, LOW);
+    digitalWrite(LEDPIN1, LOW);
+    digitalWrite(LEDPIN2, LOW);
+    digitalWrite(LEDPIN3, LOW);
+    digitalWrite(LEDPIN4, LOW);
     digitalWrite(LIDAR0PIN, LOW);
     digitalWrite(LIDAR1PIN, LOW);
     digitalWrite(LIDAR2PIN, LOW);
@@ -202,7 +229,7 @@ void setup() {
     lidar1.begin(0x2B);
     digitalWrite(LIDAR2PIN, HIGH);
     lidar2.begin(0x2C);
-    
+
     ledcSetup(pwmChannel0, freq, resolution);
     ledcSetup(pwmChannel1, freq, resolution);
     ledcSetup(pwmChannel2, freq, resolution);
@@ -216,7 +243,7 @@ void setup() {
 }
 
 void loop() {
-    Serial.print("Sequence: "); Serial.print(track_sequence); Serial.println();
+    ledControl();
     // stop everything until the robot is stabilized
     if (isTilted()) {
       stopAll();
@@ -244,7 +271,6 @@ void loop() {
 
         if (!hasDetectedBar) isUnderPrevBar = false;                             // moved away from previous bar (update flag)
         if (!isUnderPrevBar && hasDetectedBar) {                                 // detected next bar
-            Serial.println("base has arrived");
             isUnderPrevBar = true;                                               // update the flag
             baseHasArrived = true;                                               // stop moving the base
         }
@@ -252,16 +278,11 @@ void loop() {
     }
 
     // move current track until it reaches second bar from initial position
-    if (!hasDetectedBar) {                                                       // moved away from previous bar (update flag)
-        Serial.println("moved away from previous bar (update flag)");
-        isUnderPrevBar = false;
-    }
+    if (!hasDetectedBar) isUnderPrevBar = false;                                 // moved away from previous bar (update flag)
     if (!isUnderPrevBar && hasDetectedBar && bar_count != 1) {                   // detects the bar, but not correct one
-        Serial.println("detects the bar, but not correct one");
         bar_count += 1;
         isUnderPrevBar = true;
     } else if (!isUnderPrevBar && hasDetectedBar && bar_count == 1) {            // detects correct bar, close hook & change track (RESET)
-        Serial.println("detects correct bar, close hook & change track (RESET)");
         stopAll();
         moveHook(track_sequence, "close");
         isUnderPrevBar = true;
